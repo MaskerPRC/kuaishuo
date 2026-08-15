@@ -66,6 +66,19 @@ function leafThumbprint(out) {
 
 function main() {
   console.log('\n=== 快说 · 签名自检 ===')
+
+  // No certificate configured means signing was never attempted, so there is
+  // no signature to verify and nothing to fail. This is the normal state for
+  // CI and for anyone who cloned the repo — WIN_SIGN_SHA1 has no default on
+  // purpose. `npm run dist:signed` sets WIN_SIGN_REQUIRE=1, which makes
+  // sign-win.cjs fail the build before this ever runs, so a release build
+  // still cannot slip through unsigned.
+  if (!THUMBPRINT) {
+    info('未配置 WIN_SIGN_SHA1', '本次构建本就不签名，跳过签名校验')
+    console.log('')
+    return
+  }
+
   const signtool = findSigntool()
   info('signtool', signtool)
   info('期望指纹', THUMBPRINT)

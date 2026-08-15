@@ -1,0 +1,142 @@
+# 构建与发布
+#
+# 触发：推到 master 就跑测试和构建；只有当 package.json 里的版本号变成一个
+# 还没发布过的值时，才创建 Release。
+#
+# 判据是「tag v<version> 存不存在」，不是「diff 里 package.json 变没变」。
+# 后者在 squash、force-push、重跑 workflow 的时候都会给出错误答案；前者是
+# 幂等的——同一个版本号跑一百次也只会有一个 Release。
+#
+# 签名：这里签不了。证书是 Certum 云证书，私钥在他们的 HSM 里，要靠
+# SimplySign Desktop 交互式登录才能在 Windows 证书存储里现出来，CI 上没有
+# 那个桌面。所以 CI 产出的是未签名包，Release 说明里会写清楚。要发正式版就
+# 本地 `npm run dist:signed` 之后把包传上去替换。
+
+name: build & release
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# 一次只跑一个：构建要下 267MB 模型、打 254MB 安装包，并发跑没有意义。
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # 必须是 Windows：sherpa-onnx-node 和 koffi 都带平台相关的原生二进制，
+    # 而且要产出的就是 Windows 安装包。
+    runs-on: windows-latest
+
+    permissions:
+      contents: write   # 创建 Release 用
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 功能端到端（无 Electron，纯 Node）
+        run: npm run e2e
+
+      # 读版本号，并问 GitHub 这个版本是不是已经发过了。
+      - name: 判断要不要发布
+        id: ver
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "已发布过 v$version，本次只构建不发布"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version 尚未发布"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 267MB，来自 k2-fsa 的公开 release。缓存键钉在模型名上——模型换版本
+      # 时键会跟着变，不会拿到旧权重。
+      - name: 缓存模型
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/kuaishuo-models
+          key: asr-models-sense-voice-int8-2024-07-17-v1
+
+      - name: 拉取模型（命中缓存则跳过）
+        shell: bash
+        run: node scripts/fetch-models.cjs "$RUNNER_TEMP/kuaishuo-models"
+
+      - name: 打包
+        shell: bash
+        env:
+          KUAISHUO_USER_DATA: ${{ runner.temp }}/kuaishuo-models
+        run: npm run dist
+
+      - name: 找出安装包
+        id: pkg
+        shell: bash
+        run: |
+          exe=$(ls release/*.exe | head -1)
+          echo "path=$exe" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$exe")" >> "$GITHUB_OUTPUT"
+          echo "找到 $exe（$(du -h "$exe" | cut -f1)）"
+
+      # PR 和「版本号没变」的推送都停在这里：产物留 7 天供下载验证，不发布。
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuaishuo-${{ steps.ver.outputs.version }}-unsigned
+          path: ${{ steps.pkg.outputs.path }}
+          retention-days: 7
+
+      - name: 创建 Release
+        if: steps.ver.outputs.release == 'true' && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          notes=$(cat <<'EOF'
+          本地语音输入法 + 会议逐字稿。识别全程在本机完成，音频不出这台机器。
+
+          ### 安装
+
+          下载下面的 `.exe` 直接运行。**识别模型（228MB）和声纹模型（27MB）已经内置在安装包里**，装完就能用，不用等下载。
+
+          ### ⚠️ 这个包没有代码签名
+
+          Windows 会弹 SmartScreen 蓝色警告。点「更多信息」→「仍要运行」即可。
+
+          原因：签名用的是 Certum 云证书，私钥在对方 HSM 里，需要 SimplySign Desktop 交互式登录才能取到，CI 环境里做不到。这是自动构建的产物，不是正式签名版。
+
+          ### 快捷键
+
+          | | |
+          |---|---|
+          | `Ctrl+Shift+Space` | 按住说话，松手停。快按一下 = 只听一句 |
+          | `Ctrl+Shift+D` | 一直录，再按一次停 |
+          | `Ctrl+Shift+M` | 打开会议页 |
+          | `Ctrl+Shift+X` | 暂停 / 恢复 |
+          | `Ctrl+Shift+H` | 打开控制台 |
+          EOF
+          )
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            "${{ steps.pkg.outputs.path }}#${{ steps.pkg.outputs.name }}（未签名）" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "快说 ${{ steps.ver.outputs.version }}" \
+            --notes "$notes"

@@ -17,6 +17,7 @@
     "dist:signed": "cross-env WIN_SIGN_REQUIRE=1 npm run dist",
     "dist:nomodel": "npm run build:ui && electron-builder --win --x64 -p never -c.extraResources=null",
     "stage:models": "node scripts/stage-models.cjs",
+    "fetch:models": "node scripts/fetch-models.cjs",
     "rebuild:electron": "npx @electron/rebuild -f -w sherpa-onnx-node",
     "test": "node --test",
     "e2e": "node scripts/e2e-core.mjs",
