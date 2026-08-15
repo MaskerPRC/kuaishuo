@@ -82,11 +82,34 @@ jobs:
         shell: bash
         run: node scripts/fetch-models.cjs "$RUNNER_TEMP/kuaishuo-models"
 
-      - name: 打包
+      # `npm run dist` 是五个步骤串起来的。合成一步跑，失败时只知道"打包挂了"
+      # ——而 Actions 的日志要有 token 才读得到，步骤名却是公开可读的。拆开，
+      # 让失败自己报出是哪一段。
+      - name: 环境自检（磁盘 / 模型是否就位）
+        shell: bash
+        run: |
+          df -h . | tail -1
+          echo "模型目录:"
+          ls -la "$RUNNER_TEMP/kuaishuo-models/asr-models/"*/model.int8.onnx || echo "  识别模型不在！"
+          ls -la "$RUNNER_TEMP/kuaishuo-models/speaker-models/"*.onnx || echo "  声纹模型不在！"
+
+      - name: 打包 · 构建渲染层
+        run: npm run build:ui
+
+      - name: 打包 · 放入模型
         shell: bash
         env:
           KUAISHUO_USER_DATA: ${{ runner.temp }}/kuaishuo-models
-        run: npm run dist
+        run: node scripts/stage-models.cjs
+
+      - name: 打包 · electron-builder
+        run: npx electron-builder --win --x64 -p never
+
+      - name: 打包 · 产物自检
+        run: node scripts/check-package.cjs
+
+      - name: 打包 · 签名自检
+        run: node scripts/check-signature.cjs
 
       - name: 找出安装包
         id: pkg
