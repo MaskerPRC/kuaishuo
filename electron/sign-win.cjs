@@ -139,7 +139,20 @@ function probeSigning(signtool) {
 
 exports.default = async function sign(configuration) {
   const file = configuration.path
-  if (!THUMBPRINT) throw new Error('[win-sign] WIN_SIGN_SHA1 为空')
+
+  // No certificate configured at all. That used to be impossible — a thumbprint
+  // was hardcoded — so this threw, which after the default was removed meant
+  // every CI build and every clone died in electron-builder with "WIN_SIGN_SHA1
+  // 为空". Not configured is not a failure; it is the ordinary state of any
+  // machine that isn't the release machine, and it means "don't sign".
+  //
+  // WIN_SIGN_REQUIRE still fails, and says the useful thing: a release run that
+  // forgot to set the thumbprint should stop, not quietly ship unsigned.
+  if (!THUMBPRINT) {
+    if (REQUIRE) throw new Error('[win-sign] 设置了 WIN_SIGN_REQUIRE 但没有 WIN_SIGN_SHA1，不知道该用哪张证书')
+    console.warn(`${SKIP_MARKER} —— 未配置 WIN_SIGN_SHA1`)
+    return
+  }
 
   const signtool = findSigntool()
 
