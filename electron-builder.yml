@@ -1,0 +1,84 @@
+appId: com.loopsaaage.kuaishuo
+productName: 快说
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: electron/assets
+
+files:
+  - electron/**/*
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/node_modules/**/{test,__tests__,tests,example,examples,doc,docs}/**"
+
+# sherpa-onnx ships per-platform native binaries and koffi ships a prebuilt
+# .node per arch. Both must stay real files on disk — asar-packed native modules
+# can't be dlopen'd, and koffi resolves its binary by walking its own directory.
+asarUnpack:
+  - "**/node_modules/sherpa-onnx-node/**"
+  - "**/node_modules/koffi/**"
+
+# The weights ship inside the installer, so a fresh install can dictate the
+# moment it opens instead of spending its first two minutes pulling 228MB from
+# GitHub. Staged by scripts/stage-models.cjs; asr-service.cjs looks here first
+# and falls back to the download path when a build is made without them.
+#
+# extraResources, not extraFiles: this puts them under resources/models, which
+# is where process.resourcesPath points, and keeps them out of the asar (a
+# 239MB ONNX inside an archive would have to be unpacked to be mmap'd anyway).
+extraResources:
+  - from: build/models
+    to: models
+    filter: ["**/*"]
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: electron/assets/icon.png
+  # The app spends its life in the tray with a strip above the taskbar; nothing
+  # here needs elevation, and asking for it would be a red flag on an app that
+  # synthesises keystrokes.
+  requestedExecutionLevel: asInvoker
+  # Code signing. The certificate is a Certum / SimplySign **cloud** cert, so
+  # there is no .pfx to point at — the key lives in Certum's HSM and the cert
+  # shows up in the Windows store as a virtual smart card. electron/sign-win.cjs
+  # drives signtool to select it by SHA-1 thumbprint (SHA-256 digest + RFC3161
+  # timestamp, so installers already in the wild stay valid after the cert
+  # expires in 2027).
+  #
+  # The hook skips and lets the build finish unsigned when the cert isn't
+  # usable, so a machine without SimplySign can still produce a build. Set
+  # WIN_SIGN_REQUIRE=1 (npm run dist:signed) to fail instead — for release runs,
+  # where shipping unsigned is worse than not shipping.
+  signtoolOptions:
+    sign: ./electron/sign-win.cjs
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 快说
+  # Models land in userData and are hundreds of megabytes. Leaving them behind
+  # on uninstall would be litter; deleting a user's meeting transcripts without
+  # asking would be worse — so the installer removes neither, and the app's
+  # settings page has the "打开数据目录" button for anyone who wants to.
+  deleteAppDataOnUninstall: false
+
+mac:
+  target: [dmg]
+  icon: electron/assets/icon.png
+  category: public.app-category.productivity
+  extendInfo:
+    NSMicrophoneUsageDescription: 快说需要访问麦克风来把你说的话转成文字。所有识别都在本机完成。
+    # Synthesising Cmd+V into the frontmost app requires this on macOS.
+    NSAppleEventsUsageDescription: 快说需要控制"系统事件"来把识别结果粘贴到当前应用。
+
+linux:
+  target: [AppImage]
+  icon: electron/assets/icon.png
+  category: Utility

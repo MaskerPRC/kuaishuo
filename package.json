@@ -1,0 +1,49 @@
+{
+  "name": "kuaishuo",
+  "version": "1.0.1",
+  "description": "快说 — 本地语音输入法 / 会议逐字稿工具",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "author": "loopsaaage",
+  "license": "MIT",
+  "scripts": {
+    "dev:ui": "vite",
+    "dev": "concurrently -k -n vite,app -c cyan,green \"npm:dev:ui\" \"node scripts/run-dev.mjs\"",
+    "build:ui": "vite build",
+    "start": "electron .",
+    "dist": "npm run build:ui && node scripts/stage-models.cjs && electron-builder --win --x64 -p never && node scripts/check-package.cjs && node scripts/check-signature.cjs",
+    "check:dist": "node scripts/check-package.cjs",
+    "check:sign": "node scripts/check-signature.cjs",
+    "dist:signed": "cross-env WIN_SIGN_REQUIRE=1 npm run dist",
+    "dist:nomodel": "npm run build:ui && electron-builder --win --x64 -p never -c.extraResources=null",
+    "stage:models": "node scripts/stage-models.cjs",
+    "rebuild:electron": "npx @electron/rebuild -f -w sherpa-onnx-node",
+    "test": "node --test",
+    "e2e": "node scripts/e2e-core.mjs",
+    "e2e:ui": "node scripts/run-ui-e2e.mjs",
+    "probe:mic": "node scripts/run-ui-e2e.mjs mic",
+    "probe:model": "node scripts/run-ui-e2e.mjs model",
+    "probe:project": "node scripts/run-ui-e2e.mjs project",
+    "probe:perf": "node scripts/run-ui-e2e.mjs perf",
+    "icons": "node scripts/make-icons.cjs",
+    "probe:inject": "electron scripts/probe-inject.cjs"
+  },
+  "dependencies": {
+    "compressing": "^2.1.1",
+    "koffi": "^3.0.2",
+    "sherpa-onnx-node": "^1.13.2",
+    "unbzip2-stream": "^1.4.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "concurrently": "^9.1.0",
+    "cross-env": "^10.1.0",
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.0",
+    "vite": "^6.4.3",
+    "vue": "^3.5.12"
+  },
+  "overrides": {
+    "node-gyp": "^11.0.0"
+  }
+}
