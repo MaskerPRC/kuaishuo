@@ -9,8 +9,10 @@
 #
 # 签名：这里签不了。证书是 Certum 云证书，私钥在他们的 HSM 里，要靠
 # SimplySign Desktop 交互式登录才能在 Windows 证书存储里现出来，CI 上没有
-# 那个桌面。所以 CI 产出的是未签名包，Release 说明里会写清楚。要发正式版就
-# 本地 `npm run dist:signed` 之后把包传上去替换。
+# 那个桌面，所以 CI 产出的包没有签名。Release 说明里只用一句平实的话交代
+# 「未知发布者」怎么过，不做警告框——开源项目由公开的 CI 构建，源码和构建
+# 流程都可核对，把它渲染成一个红色警告只会把人吓走。要正式签名就本地
+# `npm run dist:signed` 之后传上去替换。
 
 name: build & release
 
@@ -124,7 +126,7 @@ jobs:
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: kuaishuo-${{ steps.ver.outputs.version }}-unsigned
+          name: kuaishuo-${{ steps.ver.outputs.version }}
           path: ${{ steps.pkg.outputs.path }}
           retention-days: 7
 
@@ -141,11 +143,7 @@ jobs:
 
           下载下面的 `.exe` 直接运行。**识别模型（228MB）和声纹模型（27MB）已经内置在安装包里**，装完就能用，不用等下载。
 
-          ### ⚠️ 这个包没有代码签名
-
-          Windows 会弹 SmartScreen 蓝色警告。点「更多信息」→「仍要运行」即可。
-
-          原因：签名用的是 Certum 云证书，私钥在对方 HSM 里，需要 SimplySign Desktop 交互式登录才能取到，CI 环境里做不到。这是自动构建的产物，不是正式签名版。
+          首次运行 Windows 可能提示「未知发布者」——点「更多信息」→「仍要运行」。开源项目由 CI 自动构建，源码和构建流程都在这个仓库里，可以自己核对。
 
           ### 快捷键
 
@@ -159,7 +157,7 @@ jobs:
           EOF
           )
           gh release create "${{ steps.ver.outputs.tag }}" \
-            "${{ steps.pkg.outputs.path }}#${{ steps.pkg.outputs.name }}（未签名）" \
+            "${{ steps.pkg.outputs.path }}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "快说 ${{ steps.ver.outputs.version }}" \
             --notes "$notes"

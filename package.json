@@ -1,6 +1,6 @@
 {
   "name": "kuaishuo",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "快说 — 本地语音输入法 / 会议逐字稿工具",
   "main": "electron/main.cjs",
   "type": "module",
